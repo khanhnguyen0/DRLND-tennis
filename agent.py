@@ -31,28 +31,39 @@ class Agent():
         self.action_size = action_size
         self.n_agent = n_agent
         self.seed = random.seed(seed)
+        self.global_step = 0
 
         # Initialize actor and critic local and target networks
-        self.actor = Actor(state_size, action_size, seed).to(device)
+        self.actor = Actor(state_size, action_size, seed,
+                           ACTOR_NETWORK_LINEAR_SIZES, batch_normalization=ACTOR_BATCH_NORM).to(device)
         self.actor_target = Actor(
-            state_size, action_size, seed).to(device)
-        self.critic = Critic(state_size, action_size, seed).to(device)
+            state_size, action_size, seed, ACTOR_NETWORK_LINEAR_SIZES, batch_normalization=ACTOR_BATCH_NORM).to(device)
+        self.critic = Critic(state_size, action_size, seed,
+                             CRITIC_NETWORK_LINEAR_SIZES, batch_normalization=CRITIC_BATCH_NORM).to(device)
+        self.critic_second = Critic(state_size, action_size, seed,
+                             CRITIC_SECOND_NETWORK_LINEAR_SIZES, batch_normalization=CRITIC_BATCH_NORM).to(device)
+        self.critic_second_target = Critic(
+            state_size, action_size, seed, CRITIC_NETWORK_LINEAR_SIZES, batch_normalization=CRITIC_BATCH_NORM).to(device)
         self.critic_target = Critic(
-            state_size, action_size, seed).to(device)
+            state_size, action_size, seed, CRITIC_NETWORK_LINEAR_SIZES, batch_normalization=CRITIC_BATCH_NORM).to(device)
         self.actor_optimizer = optim.Adam(
             self.actor.parameters(), lr=ACTOR_LEARNING_RATE)
         self.critic_optimizer = optim.Adam(
             self.critic.parameters(), lr=CRITIC_LEARNING_RATE)
+        self.critic_second_optimizer = optim.Adam(
+            self.critic_second.parameters(), lr=CRITIC_LEARNING_RATE)
         # Replay memory
         self.memory = ReplayBuffer(action_size, BUFFER_SIZE, BATCH_SIZE, seed)
         # Initialize time step (for updating every UPDATE_EVERY steps)
         self.t_step = [0] * n_agent
-        self.noises = [OUNoise(action_size, seed*i) for i in range(self.n_agent)]
+        self.noise = OUNoise(action_size, seed)
 
         # Copy parameters from local network to target network
         for target_param, param in zip(self.actor_target.parameters(), self.actor.parameters()):
             target_param.data.copy_(param.data)
         for target_param, param in zip(self.critic_target.parameters(), self.critic.parameters()):
+            target_param.data.copy_(param.data)
+        for target_param, param in zip(self.critic_second_target.parameters(), self.critic_second.parameters()):
             target_param.data.copy_(param.data)
 
     def step(self, state: np.array, action, reward, next_state, done, i_agent):
@@ -68,8 +79,8 @@ class Agent():
                 self.learn(experiences, GAMMA)
 
     def noise_reset(self):
-        [self.noises[i_agent].reset() for i_agent in range(self.n_agent)]
-
+        self.noise.reset()
+        
     def save_model(self, checkpoint_path: str = "./checkpoints/"):
         torch.save(self.actor.state_dict(), f"{checkpoint_path}/actor.pt")
         torch.save(self.critic.state_dict(), f"{checkpoint_path}/critic.pt")
@@ -85,14 +96,18 @@ class Agent():
         ======
             state (array_like): current state
         """
+        self.global_step += 1
+        if self.global_step < WARM_UP_STEPS:
+            action_values = np.random.rand(self.n_agent, self.action_size)
+            return action_values
         states = torch.from_numpy(states).float().to(device)
         self.actor.eval()
         with torch.no_grad():
             action_values = self.actor(states).cpu().data.numpy()
         self.actor.train()
-        for action, noise in zip(action_values, self.noises):
-            action = noise.get_action(action,t=step)
-        return np.clip(action_values, -1, 1)
+        for action in action_values:
+            action = self.noise.get_action(action,t=step)
+        return action_values
 
     def learn(self, experiences: tuple, gamma=GAMMA):
         """Update value parameters using given batch of experience tuples.
@@ -106,17 +121,25 @@ class Agent():
         # Critic loss
         mask = torch.tensor(1-dones).detach().to(device)
         Q_values = self.critic(states, actions)
+        Q_values_second = self.critic_second(states, actions)
         next_actions = self.actor_target(next_states)
-        next_Q = self.critic_target(next_states, next_actions.detach())
+        next_Q = torch.min(self.critic_target(next_states, next_actions.detach()), self.critic_second_target(next_states, next_actions.detach()))
         Q_prime = rewards + gamma * next_Q * mask
         critic_loss = F.mse_loss(Q_values, Q_prime.detach())
-
-        # Update critic network
+        critic_second_loss = F.mse_loss(Q_values_second, Q_prime.detach())
+        # Update first critic network
         self.critic_optimizer.zero_grad()
         critic_loss.backward()
         if CRITIC_GRADIENT_CLIPPING_VALUE:
             torch.nn.utils.clip_grad_norm_(self.critic.parameters(), CRITIC_GRADIENT_CLIPPING_VALUE)
         self.critic_optimizer.step()
+
+        # Update second critic network
+        self.critic_second_optimizer.zero_grad()
+        critic_second_loss.backward()
+        if CRITIC_GRADIENT_CLIPPING_VALUE:
+            torch.nn.utils.clip_grad_norm_(self.critic_second.parameters(), CRITIC_GRADIENT_CLIPPING_VALUE)
+        self.critic_second_optimizer.step()
 
         # Actor loss
         policy_loss =  -self.critic(states, self.actor(states)).mean()
@@ -131,6 +154,7 @@ class Agent():
 
         self.actor_soft_update()
         self.critic_soft_update()
+        self.critic_second_soft_update()
 
     def actor_soft_update(self, tau: float = TAU):
         """Soft update for actor target network
@@ -149,6 +173,17 @@ class Agent():
             tau (float, optional). Defaults to TAU.
         """
         for target_param, param in zip(self.critic_target.parameters(), self.critic.parameters()):
+            target_param.detach_()
+            target_param.data.copy_(
+                tau * param.data + (1.0 - tau) * target_param.data)
+
+    def critic_second_soft_update(self, tau: float = TAU):
+        """Soft update for critic target network
+
+        Args:
+            tau (float, optional). Defaults to TAU.
+        """
+        for target_param, param in zip(self.critic_second_target.parameters(), self.critic_second.parameters()):
             target_param.detach_()
             target_param.data.copy_(
                 tau * param.data + (1.0 - tau) * target_param.data)
