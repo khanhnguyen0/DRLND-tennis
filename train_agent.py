@@ -27,7 +27,7 @@ def ddpg(env, agent, brain_name, action_size, n_episodes=2000, max_t=1000, n_age
             brain_name]  # reset the environment
         states = env_info.vector_observations
         agent.noise_reset()
-        agent_scores = [0]*n_agent
+        agent_scores = np.zeros(n_agent)
         for step in range(max_t):
             actions = agent.act(states, step)
             env_info = env.step(actions)[brain_name]     # send the action to the environment
@@ -41,7 +41,7 @@ def ddpg(env, agent, brain_name, action_size, n_episodes=2000, max_t=1000, n_age
             states = next_states
             if any(dones):
                 break
-        score = np.mean(agent_scores)
+        score = np.max(agent_scores)
         scores_window.append(score)       # save most recent score
         scores.append(score)              # save most recent score
         if best_score < score:
@@ -51,7 +51,7 @@ def ddpg(env, agent, brain_name, action_size, n_episodes=2000, max_t=1000, n_age
         if i_episode % 100 == 0:
             print('\rEpisode {}\t Current score: {:.2f}\t Average Score: {:.2f}'.format(
                 i_episode, score, np.mean(scores_window)))
-        if np.mean(scores_window) >= 30:
+        if np.mean(scores_window) >= 0.5:
             print('\nEnvironment solved in {:d} episodes!\tAverage Score: {:.2f}'.format(
                 i_episode-100, np.mean(scores_window)))
             agent.save_model()
@@ -79,8 +79,8 @@ if __name__ == "__main__":
     state_size = len(state)
     print('States have length:', state_size)
     agent = Agent(state_size=state_size,
-                  action_size=action_size, seed=2, n_agent=20)
-    scores = ddpg(env, agent, brain_name, action_size)
+                  action_size=action_size, seed=2, n_agent=2)
+    scores = ddpg(env, agent, brain_name, action_size, n_agent=2)
 
     # plot the scores
     fig = plt.figure()
