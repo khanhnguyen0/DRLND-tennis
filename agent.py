@@ -105,8 +105,7 @@ class Agent():
         with torch.no_grad():
             action_values = self.actor(states).cpu().data.numpy()
         self.actor.train()
-        for action in action_values:
-            action = self.noise.get_action(action,t=step)
+        action_values =  [self.noise.get_action(action,t=step) for action in action_values]
         return action_values
 
     def learn(self, experiences: tuple, gamma=GAMMA):
