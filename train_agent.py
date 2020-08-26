@@ -6,6 +6,8 @@ from agent import Agent
 import matplotlib.pyplot as plt
 from environment import env
 from util import OUNoise
+from torch.utils.tensorboard import SummaryWriter
+
 
 
 def ddpg(env, agent, brain_name, action_size, n_episodes=2000, max_t=1000, n_agent=20):
@@ -19,6 +21,7 @@ def ddpg(env, agent, brain_name, action_size, n_episodes=2000, max_t=1000, n_age
         eps_end (float): minimum value of epsilon
         eps_decay (float): multiplicative factor (per episode) for decreasing epsilon
     """
+    writer = SummaryWriter()
     scores = []                        # list containing scores from each episode
     scores_window = deque(maxlen=100)  # last 100 scores
     best_score = 0
@@ -42,15 +45,18 @@ def ddpg(env, agent, brain_name, action_size, n_episodes=2000, max_t=1000, n_age
             if any(dones):
                 break
         score = np.max(agent_scores)
+        writer.add_scalar('data/reward', score, i_episode)
         scores_window.append(score)       # save most recent score
         scores.append(score)              # save most recent score
         if best_score < score:
             best_score = score
         print('\rEpisode {}\t Episode score: {:.2f}\t Average Score: {:.2f}\t Best Score: {:.2f}'.format(
             i_episode, score, np.mean(scores_window), best_score), end="")
+
         if i_episode % 100 == 0:
             print('\rEpisode {}\t Current score: {:.2f}\t Average Score: {:.2f}'.format(
                 i_episode, score, np.mean(scores_window)))
+            writer.add_scalar('data/score', np.mean(scores_window), i_episode)
         if np.mean(scores_window) >= 0.5:
             print('\nEnvironment solved in {:d} episodes!\tAverage Score: {:.2f}'.format(
                 i_episode-100, np.mean(scores_window)))
