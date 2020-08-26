@@ -10,7 +10,7 @@ from torch.utils.tensorboard import SummaryWriter
 
 
 
-def ddpg(env, agent, brain_name, action_size, n_episodes=2000, max_t=1000, n_agent=20):
+def ddpg(env, agent, brain_name, action_size, n_episodes=2000, max_t=200, n_agent=20):
     """Deep Q-Learning.
 
     Params
