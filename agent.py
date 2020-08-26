@@ -32,6 +32,7 @@ class Agent():
         self.n_agent = n_agent
         self.seed = random.seed(seed)
         self.global_step = 0
+        self.update_step = 0
 
         # Initialize actor and critic local and target networks
         self.actor = Actor(state_size, action_size, seed,
@@ -43,7 +44,7 @@ class Agent():
         self.critic_second = Critic(state_size, action_size, seed,
                              CRITIC_SECOND_NETWORK_LINEAR_SIZES, batch_normalization=CRITIC_BATCH_NORM).to(device)
         self.critic_second_target = Critic(
-            state_size, action_size, seed, CRITIC_NETWORK_LINEAR_SIZES, batch_normalization=CRITIC_BATCH_NORM).to(device)
+            state_size, action_size, seed, CRITIC_SECOND_NETWORK_LINEAR_SIZES, batch_normalization=CRITIC_BATCH_NORM).to(device)
         self.critic_target = Critic(
             state_size, action_size, seed, CRITIC_NETWORK_LINEAR_SIZES, batch_normalization=CRITIC_BATCH_NORM).to(device)
         self.actor_optimizer = optim.Adam(
@@ -56,7 +57,7 @@ class Agent():
         self.memory = ReplayBuffer(action_size, BUFFER_SIZE, BATCH_SIZE, seed)
         # Initialize time step (for updating every UPDATE_EVERY steps)
         self.t_step = [0] * n_agent
-        self.noise = OUNoise(action_size, seed)
+        self.noise = OUNoise(action_size, seed, decay_period=50)
 
         # Copy parameters from local network to target network
         for target_param, param in zip(self.actor_target.parameters(), self.actor.parameters()):
@@ -116,6 +117,7 @@ class Agent():
             experiences (Tuple[torch.Variable]): tuple of (s, a, r, s', done) tuples 
             gamma (float): discount factor
         """
+        self.update_step += 1
         states, actions, rewards, next_states, dones = experiences
         # Critic loss
         mask = torch.tensor(1-dones).detach().to(device)
@@ -124,31 +126,36 @@ class Agent():
         next_actions = self.actor_target(next_states)
         next_Q = torch.min(self.critic_target(next_states, next_actions.detach()), self.critic_second_target(next_states, next_actions.detach()))
         Q_prime = rewards + gamma * next_Q * mask
-        critic_loss = F.mse_loss(Q_values, Q_prime.detach())
-        critic_second_loss = F.mse_loss(Q_values_second, Q_prime.detach())
-        # Update first critic network
-        self.critic_optimizer.zero_grad()
-        critic_loss.backward()
-        if CRITIC_GRADIENT_CLIPPING_VALUE:
-            torch.nn.utils.clip_grad_norm_(self.critic.parameters(), CRITIC_GRADIENT_CLIPPING_VALUE)
-        self.critic_optimizer.step()
+     
 
-        # Update second critic network
-        self.critic_second_optimizer.zero_grad()
-        critic_second_loss.backward()
-        if CRITIC_GRADIENT_CLIPPING_VALUE:
-            torch.nn.utils.clip_grad_norm_(self.critic_second.parameters(), CRITIC_GRADIENT_CLIPPING_VALUE)
-        self.critic_second_optimizer.step()
+        if self.update_step % CRITIC_UPDATE_EVERY == 0:
+            critic_loss = F.mse_loss(Q_values, Q_prime.detach())
+            critic_second_loss = F.mse_loss(Q_values_second, Q_prime.detach())
+        # Update first critic network
+            self.critic_optimizer.zero_grad()
+            critic_loss.backward()
+            if CRITIC_GRADIENT_CLIPPING_VALUE:
+                torch.nn.utils.clip_grad_norm_(self.critic.parameters(), CRITIC_GRADIENT_CLIPPING_VALUE)
+            self.critic_optimizer.step()
+
+            # Update second critic network
+            self.critic_second_optimizer.zero_grad()
+            critic_second_loss.backward()
+            if CRITIC_GRADIENT_CLIPPING_VALUE:
+                torch.nn.utils.clip_grad_norm_(self.critic_second.parameters(), CRITIC_GRADIENT_CLIPPING_VALUE)
+            self.critic_second_optimizer.step()
 
         # Actor loss
-        policy_loss =  -self.critic(states, self.actor(states)).mean()
 
-        # Update actor network
-        self.actor_optimizer.zero_grad()
-        policy_loss.backward()
-        if ACTOR_GRADIENT_CLIPPING_VALUE:
-            torch.nn.utils.clip_grad_norm_(self.actor.parameters(), ACTOR_GRADIENT_CLIPPING_VALUE)
-        self.actor_optimizer.step()
+        if self.update_step % POLICY_UPDATE_EVERY == 0:
+            policy_loss =  -self.critic(states, self.actor(states)).mean()
+
+            # Update actor network
+            self.actor_optimizer.zero_grad()
+            policy_loss.backward()
+            if ACTOR_GRADIENT_CLIPPING_VALUE:
+                torch.nn.utils.clip_grad_norm_(self.actor.parameters(), ACTOR_GRADIENT_CLIPPING_VALUE)
+            self.actor_optimizer.step()
 
 
         self.actor_soft_update()

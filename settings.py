@@ -1,17 +1,23 @@
 """Module for project hyper parameters"""
 
-ENV_PATH = './data/Reacher_2/Reacher.exe'
+ENV_PATH = './data/Tennis.app'
+ACTOR_NETWORK_LINEAR_SIZES = "512,256"
+CRITIC_NETWORK_LINEAR_SIZES = "512,256"
+CRITIC_SECOND_NETWORK_LINEAR_SIZES = "512,256"
+WARM_UP_STEPS = 0
 ACTOR_LEARNING_RATE = 1e-3
 CRITIC_LEARNING_RATE = 1e-3
-BUFFER_SIZE = int(1e6)          # replay buffer size
-BATCH_SIZE = 256               # minibatch size
-UPDATE_EVERY = 2               # how often to update the network
-GAMMA = 0.99                    # discount factor
+CRITIC_UPDATE_EVERY = 1
+POLICY_UPDATE_EVERY = 1
+BUFFER_SIZE = int(2e6)          # replay buffer size
+BATCH_SIZE = 512               # minibatch size
+UPDATE_EVERY = 1               # how often to update the network
+GAMMA = 0.98                    # discount factor
 TAU = 1e-3                      # for soft update of target parameters
 CRITIC_BATCH_NORM = True        # apply batch norm for critic network
 ACTOR_BATCH_NORM = True         # apply batch norm for actor network
 LEARN_TIMES = 1
-CRITIC_GRADIENT_CLIPPING_VALUE = 1
+CRITIC_GRADIENT_CLIPPING_VALUE = 0
 ACTOR_GRADIENT_CLIPPING_VALUE = 0
 
 def printvars():
